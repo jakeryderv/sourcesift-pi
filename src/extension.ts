@@ -249,6 +249,7 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 			cache.clear();
 			guidance = readGuidance(config.guidancePath);
 			if (ctx.mode === "tui") installChrome(ctx);
+			if (quiet) ctx.ui.setHiddenThinkingLabel("");
 			restore(ctx);
 		});
 		pi.on("session_tree", (_event, ctx) => restore(ctx));
@@ -471,10 +472,13 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 			return new Text(styled, 0, 0);
 		});
 
-		// Make citations stand out in rendered answers without touching the stored text.
-		pi.registerMarkdownTransformer((markdown, context) =>
-			context.messageType === "assistant" ? markdown.replace(/(?<![*`])\[S(\d+)\](?![*`])/g, "**[S$1]**") : markdown,
-		);
+		// Make citations stand out in rendered answers without touching the stored text, and blank
+		// thinking blocks while quiet (pi has no runtime switch for its hideThinkingBlock setting).
+		pi.registerMarkdownTransformer((markdown, context) => {
+			if (context.messageType === "assistant-thinking") return quiet ? "" : markdown;
+			if (context.messageType === "assistant") return markdown.replace(/(?<![*`])\[S(\d+)\](?![*`])/g, "**[S$1]**");
+			return markdown;
+		});
 
 		pi.registerCommand("read", {
 			description: "Read a cited article in full, for example /read S3",
@@ -556,8 +560,12 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 			handler: async (args, ctx) => {
 				const wanted = args.trim().toLowerCase();
 				quiet = wanted === "on" ? true : wanted === "off" ? false : !quiet;
+				ctx.ui.setHiddenThinkingLabel(quiet ? "" : undefined);
 				requestRender?.();
-				ctx.ui.notify(quiet ? "Tool output hidden. /quiet off shows it again." : "Tool output shown.", "info");
+				ctx.ui.notify(
+					quiet ? "Tool output and thinking hidden. /quiet off shows them again." : "Tool output and thinking shown.",
+					"info",
+				);
 			},
 		});
 

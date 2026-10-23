@@ -42,8 +42,9 @@ Inside the chat:
 - `/read S3` fetches a cited article in full and asks for what it adds.
 - Research results collapse to one line; press Ctrl+O to expand them into `[S1] title —
   publisher · date` with the coverage notes.
-- `/quiet` hides tool output for the conversation entirely (`/quiet off` shows it again);
-  set `"quiet": true` in `config.json` to start that way.
+- `/quiet` hides tool output and thinking for the conversation (`/quiet off` shows them
+  again); set `"quiet": true` in `config.json` to start that way. Ctrl+T on its own
+  collapses or expands thinking blocks.
 - Pi.s `/model`, `/thinking`, `/login`, `/new`, `/resume`, `/fork`, and `/help` work as usual.
 - There is no shell: the model has no bash tool, and the `!` prefix is disabled.
 

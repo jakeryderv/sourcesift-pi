@@ -148,6 +148,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 		sessionStartEvent,
 	}) => {
 		const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+		// Quiet by default also starts with thinking blocks collapsed; Ctrl+T still toggles them.
+		if (config.quiet) settingsManager.applyOverrides({ hideThinkingBlock: true });
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
