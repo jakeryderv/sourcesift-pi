@@ -73,8 +73,9 @@ describe("renderReferences", () => {
 		const lines = referenceLines([
 			{ ...reference, published_at: null, updated_at: "2026-10-23T13:25:15Z", kind: "article" },
 		]);
-		assert.equal(lines[0], "[S2] A headline — example.com (article)");
-		assert.equal(lines[2], "    published unknown · updated Oct 23 13:25 UTC · retrieved 12:00 UTC");
+		assert.equal(lines[0], "References:");
+		assert.equal(lines[1], "[S2] A headline — example.com (article)");
+		assert.equal(lines[3], "    published unknown · updated Oct 23 13:25 UTC · retrieved 12:00 UTC");
 	});
 
 	it("returns an empty string when there is nothing to say", () => {
