@@ -24,7 +24,7 @@ import { Type } from "typebox";
 import { type Config, loadConfig } from "./config.ts";
 import { Fetcher, PageCache } from "./http.ts";
 import { buildInstructions } from "./prompt.ts";
-import { renderReferences } from "./render.ts";
+import { noteLines, referenceLines, renderReferences } from "./render.ts";
 import {
 	citationIds,
 	type Evidence,
@@ -451,25 +451,21 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 			};
 		});
 
-		pi.registerMessageRenderer(RESULT_MESSAGE, (message, _options, theme) => {
+		pi.registerMessageRenderer(RESULT_MESSAGE, (message, options, theme) => {
 			const details = message.details as { references?: Reference[]; limitations?: string[] } | undefined;
-			const content = details?.references
-				? renderReferences(details.references, details.limitations ?? [], { links: true })
-				: typeof message.content === "string"
-					? message.content
-					: "";
-			if (!content) return undefined;
-			const styled = content
-				.split("\n")
-				.map((line) =>
-					line.startsWith("Note:")
-						? theme.fg("warning", line)
-						: line.startsWith("[S")
-							? theme.fg("accent", line)
-							: theme.fg("muted", line),
-				)
-				.join("\n");
-			return new Text(styled, 0, 0);
+			if (!details) return undefined;
+			const refs = referenceLines(details.references ?? [], { links: true }).map((line) =>
+				line.startsWith("[S") ? theme.fg("accent", line) : theme.fg("muted", line),
+			);
+			const notes = noteLines(details.limitations ?? []);
+			const lines = [...refs];
+			if (notes.length) {
+				if (refs.length) lines.push("");
+				// Notes collapse to one line by default; the tool-output toggle (Ctrl+O) expands them.
+				if (options.expanded) lines.push(...notes.map((line) => theme.fg("warning", line)));
+				else lines.push(theme.fg("dim", `${notes.length} note${notes.length === 1 ? "" : "s"} · ctrl+o to read`));
+			}
+			return lines.length ? new Text(lines.join("\n"), 0, 0) : undefined;
 		});
 
 		// Make citations stand out in rendered answers without touching the stored text, and blank
