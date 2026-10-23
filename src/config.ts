@@ -16,9 +16,13 @@ export interface Limits {
 	maxResponseBytes: number;
 	maxItemChars: number;
 	maxEvidenceChars: number;
+	/** How long a fetched feed stays reusable across turns in one conversation. */
+	feedCacheSeconds: number;
 }
 
 export interface Config {
+	/** Optional Markdown file of interests, priorities, and presentation preferences. */
+	guidancePath: string;
 	timezone: string;
 	recentDays: number;
 	disabled: string[];
@@ -36,11 +40,16 @@ export const DEFAULT_LIMITS: Limits = {
 	maxResponseBytes: 2 * 1024 * 1024,
 	maxItemChars: 10000,
 	maxEvidenceChars: 60000,
+	feedCacheSeconds: 600,
 };
 
+export function configHome(): string {
+	if (process.env.SOURCESIFT_HOME) return process.env.SOURCESIFT_HOME;
+	return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "sourcesift");
+}
+
 export function defaultConfigPath(): string {
-	const base = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
-	return join(base, "sourcesift", "config.json");
+	return join(configHome(), "config.json");
 }
 
 function validTimezone(value: unknown): string {
@@ -76,6 +85,7 @@ export function loadConfig(path: string | undefined = process.env.SOURCESIFT_CON
 	const custom = Array.isArray(raw.custom) ? raw.custom.map((item) => validateSource(item)) : [];
 	const disabled = Array.isArray(raw.disabled) ? raw.disabled.map(String) : [];
 	return {
+		guidancePath: typeof raw.guidance === "string" ? raw.guidance : join(configHome(), "guidance.md"),
 		timezone: raw.timezone === undefined ? "UTC" : validTimezone(raw.timezone),
 		recentDays: typeof raw.recent_days === "number" ? Math.min(90, Math.max(1, raw.recent_days)) : 7,
 		disabled,

@@ -5,10 +5,9 @@ command: it uses pi's SDK, terminal UI, provider handling, and sessions as libra
 and adds the registered source catalog, bounded retrieval, evidence with stable
 citation IDs, grounding rules, and a citation check on every answer.
 
-Status: feeds, article follow-up, windows, dedup, citation repair, interactive chat,
-one-shot print mode, and saved conversations work. Not yet ported from the Python
-version: IP-pinned connections (DNS answers are checked but not pinned), tests, the
-live evaluation script, and configured context files.
+Status: feeds, article follow-up, date windows, dedup, citation repair, interactive
+chat, one-shot text and JSON output, saved conversations, pinned public-address
+fetching, a per-conversation feed cache, and a personal guidance file all work.
 
 ## Install and run
 
@@ -30,13 +29,21 @@ ssift "Check tech and AI this week"     # interactive, sends the first message
 ssift -p "Check news"                   # one shot: answer plus references, then exit
 cat report.md | ssift -p "Summarize this"
 ssift -c                                # continue the most recent conversation here
+ssift --json -p "Check news" | jq .references   # one JSON object: answer, references, notes, usage
 ```
 
 Flags such as `--model`, `--provider`, and `--thinking` override the saved choice for
 one run, the same way they do in pi. `ssift --help` lists them.
 
-Inside the chat: `/sources` lists the catalog, `/evidence` lists retained citations,
-and pi's `/model`, `/login`, `/new`, `/resume`, `/fork`, and `/help` work as usual.
+Inside the chat:
+
+- `/sources` opens a list where you enable or disable sources for this conversation.
+- `/evidence` lists the citations retained so far.
+- `/read S3` fetches a cited article in full and asks for what it adds.
+- Research results show each retrieved item as `[S1] title — publisher · date`; expand a
+  result to see all of them and the coverage notes.
+- Pi.s `/model`, `/thinking`, `/login`, `/new`, `/resume`, `/fork`, and `/help` work as usual.
+- There is no shell: the model has no bash tool, and the `!` prefix is disabled.
 
 ## Where things live
 
@@ -44,6 +51,7 @@ and pi's `/model`, `/login`, `/new`, `/resume`, `/fork`, and `/help` work as usu
 |---|---|
 | Credentials, model catalog, pi settings, themes | `$XDG_CONFIG_HOME/sourcesift/` (override with `SOURCESIFT_HOME`) |
 | SourceSift configuration | `$XDG_CONFIG_HOME/sourcesift/config.json` (override with `--config` or `SOURCESIFT_CONFIG`) |
+| Personal guidance | `$XDG_CONFIG_HOME/sourcesift/guidance.md` (optional; see below) |
 | Saved conversations | `$XDG_DATA_HOME/sourcesift/sessions/` |
 
 These are separate from a personal pi installation in `~/.pi`, so research sessions
@@ -68,9 +76,28 @@ Optional `config.json`:
       "topics": ["research"]
     }
   ],
-  "limits": { "maxSources": 3, "maxArticles": 6 }
+  "limits": { "maxSources": 3, "maxArticles": 6, "feedCacheSeconds": 600 },
+  "guidance": "~/notes/research-guidance.md"
 }
 ```
+
+## Personal guidance
+
+Put a short Markdown file at `~/.config/sourcesift/guidance.md` describing your
+interests, priorities, and how you like briefings presented. It is added to every
+request as explicitly selected guidance, so "check tech" leans toward what matters to
+you. It never authorizes URLs or tools, and the grounding rules still apply.
+
+## Retrieval behavior
+
+Only public HTTP(S) hosts on standard ports are fetched. Each connection resolves the
+hostname once, rejects private, loopback, link-local, and reserved answers, and connects
+to that exact address, so a DNS answer cannot redirect retrieval inside your network.
+Robots rules are honored, redirects are re-checked, bodies are byte-bounded, and no
+cookies or proxies are used. Feeds fetched in a conversation are reused for ten minutes
+(`limits.feedCacheSeconds`); the recorded retrieval time is the fetch time, not the reuse
+time. Sources selected for one request are fetched concurrently and ingested in selection
+order, so citation IDs are stable.
 
 ## Develop
 

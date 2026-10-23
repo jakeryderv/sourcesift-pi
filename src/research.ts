@@ -113,6 +113,12 @@ function unique(values: Iterable<string>): string[] {
 	return [...new Set(values)];
 }
 
+interface FeedPage {
+	page: Page;
+	items: ParsedItem[];
+	malformed: boolean;
+}
+
 /** Bounded shared tool implementation, independent of the agent framework. */
 export class Research {
 	readonly now: Date;
@@ -212,6 +218,7 @@ export class Research {
 			return this.reply();
 		}
 		const allowedIds = new Set(resolvedOnly.map((source) => (source as Source).id));
+		const chosen: Source[] = [];
 		for (const name of sourceIds) {
 			const source = this.registry.resolve(name);
 			if (!source) {
@@ -228,12 +235,20 @@ export class Research {
 				break;
 			}
 			this.selected.push(source.id);
-			try {
-				await this.readSource(source);
-			} catch (error) {
-				this.note(`${source.name}: ${messageOf(error)}`);
-			}
+			chosen.push(source);
 		}
+		// Fetch sources concurrently, then ingest in selection order so citation IDs are deterministic.
+		const fetched = await Promise.all(
+			chosen.map(async (source) => {
+				try {
+					return { source, pages: await this.fetchSource(source) };
+				} catch (error) {
+					this.note(`${source.name}: ${messageOf(error)}`);
+					return { source, pages: [] as FeedPage[] };
+				}
+			}),
+		);
+		for (const { source, pages } of fetched) this.ingestSource(source, pages);
 		for (const url of directUrls.slice(0, this.config.limits.maxArticles)) {
 			try {
 				const normalized = normalizeUrl(url);
@@ -271,30 +286,40 @@ export class Research {
 		return this.reply();
 	}
 
-	private async readSource(source: Source): Promise<void> {
+	/** Network half of reading a source: feed discovery and page fetches, no evidence mutation. */
+	private async fetchSource(source: Source): Promise<FeedPage[]> {
 		if (!source.capabilities.includes("feed")) throw new RetrievalError("This source does not offer feed access.");
 		let feeds = source.feeds;
 		if (!feeds.length) {
-			feeds = discoverFeeds(await this.fetcher.get(source.website));
+			feeds = discoverFeeds(await this.fetcher.get(source.website, { cache: true }));
 			if (!feeds.length) throw new RetrievalError("No RSS/Atom feed was declared by the website.");
 		}
-		let count = 0;
+		const pages: FeedPage[] = [];
 		for (const url of feeds) {
 			try {
-				const page = await this.fetcher.get(url);
+				const page = await this.fetcher.get(url, { cache: true });
 				const { items, malformed } = await parseFeed(page);
-				if (malformed) this.note(`${source.name}: feed is malformed; only usable entries were considered.`);
-				if (!items.length) this.note(`${source.name}: feed contained no usable entries.`);
-				items.sort((a, b) => dateValue(b) - dateValue(a));
-				for (const item of items) {
-					if (this.add(item, page, source.id, "feed_summary")) count += 1;
-					if (count >= this.config.limits.maxItemsPerSource) {
-						this.note(`${source.name}: feed selection is capped at ${count} items; coverage is partial.`);
-						return;
-					}
-				}
+				pages.push({ page, items, malformed });
 			} catch (error) {
 				this.note(`${source.name}: ${messageOf(error)}`);
+			}
+		}
+		return pages;
+	}
+
+	/** Deterministic half: window filtering, caps, dedup, and citation IDs in selection order. */
+	private ingestSource(source: Source, pages: FeedPage[]): void {
+		let count = 0;
+		for (const { page, items, malformed } of pages) {
+			if (malformed) this.note(`${source.name}: feed is malformed; only usable entries were considered.`);
+			if (!items.length) this.note(`${source.name}: feed contained no usable entries.`);
+			const ordered = [...items].sort((a, b) => dateValue(b) - dateValue(a));
+			for (const item of ordered) {
+				if (this.add(item, page, source.id, "feed_summary")) count += 1;
+				if (count >= this.config.limits.maxItemsPerSource) {
+					this.note(`${source.name}: feed selection is capped at ${count} items; coverage is partial.`);
+					return;
+				}
 			}
 		}
 	}
@@ -304,8 +329,9 @@ export class Research {
 		if (this.articles >= this.config.limits.maxArticles) throw new RetrievalError("Article limit reached.");
 		const known = this.allEvidence().get(url);
 		const source = known?.source_id ? this.registry.resolve(known.source_id) : undefined;
-		if (source && !source.capabilities.includes("article"))
+		if (source && !source.capabilities.includes("article")) {
 			throw new RetrievalError("This source does not offer article access.");
+		}
 		this.articles += 1;
 		this.read.add(url);
 		const page = await this.fetcher.get(url);
@@ -390,7 +416,7 @@ export class Research {
 			author: item.author,
 			published_at: item.publishedAt ? item.publishedAt.toISOString() : null,
 			updated_at: item.updatedAt ? item.updatedAt.toISOString() : null,
-			retrieved_at: new Date().toISOString(),
+			retrieved_at: page.fetchedAt.toISOString(),
 			kind,
 			limitations: warnings,
 			text,
@@ -420,6 +446,12 @@ export class Research {
 /** Unique citation IDs in first-appearance order. */
 export function citationIds(answer: string): string[] {
 	return unique([...answer.matchAll(CITATION)].map((match) => `S${match[1]}`));
+}
+
+/** Normalize a user-typed citation such as "S4", "[S4]", or "4" to an evidence ID. */
+export function parseCitation(value: string): string | undefined {
+	const match = value.trim().match(/^\[?S?(\d+)\]?$/i);
+	return match ? `S${match[1]}` : undefined;
 }
 
 function dateValue(item: ParsedItem): number {

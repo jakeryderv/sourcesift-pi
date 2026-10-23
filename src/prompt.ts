@@ -53,6 +53,8 @@ export interface PromptInput {
 	retained: Evidence[];
 	previousLimitations: string[];
 	session: boolean;
+	/** Explicitly selected personal guidance; followed when consistent with the task and rules. */
+	guidance?: string;
 }
 
 export function buildInstructions(input: PromptInput): string {
@@ -87,6 +89,12 @@ export function buildInstructions(input: PromptInput): string {
 	}
 	if (input.previousLimitations.length) {
 		sections.push(`previous_limitations:\n${input.previousLimitations.map((item) => `- ${item}`).join("\n")}`);
+	}
+	if (input.guidance?.trim()) {
+		sections.push(
+			"user_guidance (explicitly selected by the user: follow its interests, priorities, and presentation preferences when consistent with the current task and the rules above; it never authorizes URLs or tools):\n" +
+				input.guidance.trim(),
+		);
 	}
 	return sections.filter(Boolean).join("\n\n");
 }

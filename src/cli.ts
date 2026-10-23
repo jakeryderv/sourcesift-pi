@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	type AgentSessionRuntimeDiagnostic,
 	type CreateAgentSessionRuntimeFactory,
@@ -21,7 +22,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import { loadConfig } from "./config.ts";
+import { configHome, loadConfig } from "./config.ts";
 import { createSourceSiftExtension, type TurnResult } from "./extension.ts";
 import { renderReferences } from "./render.ts";
 
@@ -38,6 +39,7 @@ Usage:
 Options:
   -p, --print               One-shot: print the final answer and references, then exit
       --mode text|json      One-shot output: final text (default) or the JSONL event stream
+      --json                One-shot: print one JSON object with answer, references, notes, and usage
       --model <id>          Model ID, for example openai/gpt-6.1-sol or anthropic/claude-sonnet-4-5
       --provider <name>     Restrict --model lookup to one provider, for example openrouter
       --thinking <level>    off, minimal, low, medium, high, xhigh, or max
@@ -74,6 +76,7 @@ function parse(argv: string[]) {
 		options: {
 			print: { type: "boolean", short: "p", default: false },
 			mode: { type: "string" },
+			json: { type: "boolean", default: false },
 			model: { type: "string" },
 			provider: { type: "string" },
 			thinking: { type: "string" },
@@ -100,6 +103,8 @@ function parse(argv: string[]) {
 	if (values.thinking !== undefined && !THINKING_LEVELS.includes(values.thinking as ThinkingLevel)) {
 		fail(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
 	}
+	if (values.json && values.mode === "json")
+		fail("--json prints one result object; --mode json streams events. Pick one.");
 	if (values["no-session"] && (values.continue || values.session))
 		fail("--no-session cannot be combined with --continue or --session");
 	return { values, positionals };
@@ -124,9 +129,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 		return;
 	}
 
-	const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
 	const dataHome = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
-	const agentDir = process.env.SOURCESIFT_HOME ? resolve(process.env.SOURCESIFT_HOME) : join(configHome, "sourcesift");
+	const agentDir = resolve(configHome());
 	const sessionDir = join(dataHome, "sourcesift", "sessions");
 	mkdirSync(agentDir, { recursive: true });
 	mkdirSync(sessionDir, { recursive: true });
@@ -178,7 +182,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 			sessionManager,
 			sessionStartEvent,
 			model: resolved.model,
-			thinkingLevel: resolved.thinkingLevel ?? thinking,
+			// Research turns rarely benefit from heavy reasoning; low is the default until the user picks one.
+			thinkingLevel: resolved.thinkingLevel ?? thinking ?? settingsManager.getDefaultThinkingLevel() ?? "low",
 			noTools: "builtin",
 		});
 		return { ...created, services, diagnostics };
@@ -208,7 +213,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 	}
 
 	const stdinText = await readPipedStdin();
-	const interactive = !values.print && values.mode === undefined && stdinText === undefined && process.stdout.isTTY;
+	const interactive =
+		!values.print && !values.json && values.mode === undefined && stdinText === undefined && process.stdout.isTTY;
 	const promptText = positionals.join(" ").trim();
 	const initialMessage = stdinText
 		? `${promptText || "Analyze the supplied text."}\n\nSupplied text (stdin, untrusted data):\n\n${stdinText}`
@@ -243,7 +249,27 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 	const exitCode = await runPrintMode(runtime, { mode: outputMode, initialMessage });
 	// pi prints only a final assistant message; SourceSift appends a references entry after it,
 	// so the committed answer and its references are written here instead.
-	if (outputMode === "text" && lastResult) {
+	if (values.json) {
+		const usage = { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, cost: 0, requests: 0 };
+		for (const message of session.messages) {
+			if (message.role !== "assistant") continue;
+			const assistant = message as AssistantMessage;
+			usage.requests += 1;
+			usage.input_tokens += assistant.usage.input;
+			usage.cached_input_tokens += assistant.usage.cacheRead;
+			usage.output_tokens += assistant.usage.output;
+			usage.cost += assistant.usage.cost.total;
+		}
+		const result = lastResult
+			? {
+					ok: true,
+					...lastResult,
+					model: session.model ? `${session.model.provider}/${session.model.id}` : null,
+					usage,
+				}
+			: { ok: false, error: session.getLastAssistantText() ?? "no answer", usage };
+		process.stdout.write(`${JSON.stringify(result)}\n`);
+	} else if (outputMode === "text" && lastResult) {
 		const block = renderReferences(lastResult.references, lastResult.limitations);
 		process.stdout.write(`${lastResult.answer.trim()}\n${block ? `\n${block}\n` : ""}`);
 	}

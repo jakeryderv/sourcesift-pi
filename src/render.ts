@@ -2,14 +2,23 @@
 
 import type { Reference } from "./research.ts";
 
-export function renderReferences(references: Reference[], limitations: string[]): string {
+/** Wrap text in an OSC 8 terminal hyperlink; pi-tui accounts for the escape when measuring width. */
+export function hyperlink(url: string, text: string = url): string {
+	return `\u001b]8;;${url}\u0007${text}\u001b]8;;\u0007`;
+}
+
+export function renderReferences(
+	references: Reference[],
+	limitations: string[],
+	options: { links?: boolean } = {},
+): string {
 	const lines: string[] = [];
 	if (references.length) {
 		lines.push("References:");
 		for (const ref of references) {
 			lines.push(
 				`[${ref.id}] ${ref.title} — ${ref.publisher} (${ref.kind.replace("_", " ")})`,
-				`    ${ref.url}`,
+				`    ${options.links ? hyperlink(ref.url) : ref.url}`,
 				`    Published: ${ref.published_at ?? "unknown"}; updated: ${ref.updated_at ?? "unknown"}; retrieved: ${ref.retrieved_at}`,
 			);
 		}

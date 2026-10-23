@@ -1,17 +1,26 @@
-/** SourceSift as a pi extension: research tools, grounding rules, and citation checks. */
+/** SourceSift as a pi extension: research tools, grounding rules, citation checks, and the chat UI. */
+
+import { readFileSync } from "node:fs";
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import {
+	defineTool,
+	type ExtensionAPI,
+	type ExtensionContext,
+	getSettingsListTheme,
+	type Theme,
+} from "@earendil-works/pi-coding-agent";
+import { type SettingItem, SettingsList, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 import { type Config, loadConfig } from "./config.ts";
-import { Fetcher } from "./http.ts";
+import { Fetcher, PageCache } from "./http.ts";
 import { buildInstructions } from "./prompt.ts";
 import { renderReferences } from "./render.ts";
 import {
 	citationIds,
 	type Evidence,
+	parseCitation,
 	type Reference,
 	type Reply,
 	Research,
@@ -22,15 +31,22 @@ import { BUILTIN_SOURCES, SourceRegistry } from "./sources.ts";
 
 const TOOL_NAMES = ["research", "read_article"];
 const STATE_ENTRY = "sourcesift-state";
+const SOURCES_ENTRY = "sourcesift-sources";
 const RESULT_MESSAGE = "sourcesift-result";
 const REPAIR_MESSAGE = "sourcesift-repair";
 const NO_RETRIEVAL = "No external sources were retrieved; current information has not been verified.";
+const MAX_GUIDANCE_BYTES = 32 * 1024;
+const COLLAPSED_ITEMS = 6;
 
 interface SessionState {
 	evidence: Record<string, Evidence>;
 	nextId: number;
 	limitations: string[];
 	turns: number;
+}
+
+interface SourcesState {
+	disabled: string[];
 }
 
 /** The application-validated outcome of one completed turn. */
@@ -48,7 +64,16 @@ export interface SourceSiftOptions {
 	onResult?: (result: TurnResult) => void;
 }
 
-function buildRegistry(config: Config): SourceRegistry {
+function packageVersion(): string {
+	try {
+		return (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string })
+			.version;
+	} catch {
+		return "dev";
+	}
+}
+
+function buildCatalog(config: Config): SourceRegistry {
 	const catalog = new SourceRegistry([...BUILTIN_SOURCES, ...config.custom]);
 	const known = new Set(catalog.list().map((source) => source.id));
 	for (const id of config.disabled) {
@@ -71,49 +96,166 @@ function summarize(reply: Reply): string {
 	return `${items} evidence item${items === 1 ? "" : "s"} · ${window} · ${notes} note${notes === 1 ? "" : "s"}`;
 }
 
+function evidenceLine(item: Evidence, theme: Theme, width: number): string {
+	const date = item.published_at?.slice(0, 10) ?? item.updated_at?.slice(0, 10) ?? "undated";
+	const kind = item.kind === "article" ? " · article" : "";
+	const tail = theme.fg("dim", ` — ${item.publisher} · ${date}${kind}`);
+	const budget = Math.max(20, width - visibleWidth(tail) - item.id.length - 4);
+	const title = item.title.length > budget ? `${item.title.slice(0, budget - 1)}…` : item.title;
+	return `${theme.fg("accent", `[${item.id}]`)} ${title}${tail}`;
+}
+
+function renderReply(result: { details?: unknown }, expanded: boolean, theme: Theme, width = 100): Text {
+	const reply = result.details as Reply | undefined;
+	if (!reply) return new Text(theme.fg("muted", "no result"), 0, 0);
+	const lines = [theme.fg("muted", summarize(reply))];
+	const shown = expanded ? reply.evidence : reply.evidence.slice(0, COLLAPSED_ITEMS);
+	for (const item of shown) lines.push(evidenceLine(item, theme, width));
+	if (!expanded && reply.evidence.length > shown.length) {
+		lines.push(theme.fg("dim", `… ${reply.evidence.length - shown.length} more (expand to see all)`));
+	}
+	if (expanded) for (const note of reply.limitations) lines.push(theme.fg("warning", `note: ${note}`));
+	return new Text(lines.join("\n"), 0, 0);
+}
+
+function readGuidance(path: string): string {
+	try {
+		const text = readFileSync(path, "utf8");
+		return text.length > MAX_GUIDANCE_BYTES ? text.slice(0, MAX_GUIDANCE_BYTES) : text;
+	} catch {
+		return "";
+	}
+}
+
 /** Build the extension factory; the CLI passes its own config and result hook. */
 export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 	return function sourcesift(pi: ExtensionAPI): void {
 		const config = options.config ?? loadConfig();
-		const registry = buildRegistry(config);
+		const catalog = buildCatalog(config);
+		const version = packageVersion();
 
 		// Session-scoped state, restored from the active branch so /resume and /fork work.
 		let evidence = new Map<string, Evidence>();
 		let nextId = 1;
 		let limitations: string[] = [];
 		let turns = 0;
+		let disabledIds = new Set<string>();
+		let guidance = "";
+		let lastHttp = 0;
+		const cache = new PageCache(config.limits.feedCacheSeconds);
+		let requestRender: (() => void) | undefined;
 		// Run-scoped state.
 		let current: Research | null = null;
 		let repairs = 0;
+
+		const activeRegistry = () => new SourceRegistry(catalog.list().filter((source) => !disabledIds.has(source.id)));
+
+		function status(ctx: ExtensionContext): void {
+			ctx.ui.setStatus("sourcesift", `${activeRegistry().list().length} sources · ${evidence.size} evidence`);
+			requestRender?.();
+		}
 
 		function restore(ctx: ExtensionContext): void {
 			evidence = new Map();
 			nextId = 1;
 			limitations = [];
 			turns = 0;
+			disabledIds = new Set();
 			for (const entry of ctx.sessionManager.getBranch()) {
-				if (entry.type === "custom" && entry.customType === STATE_ENTRY && entry.data) {
+				if (entry.type !== "custom" || !entry.data) continue;
+				if (entry.customType === STATE_ENTRY) {
 					const state = entry.data as SessionState;
 					evidence = new Map(Object.entries(state.evidence));
 					nextId = state.nextId;
 					limitations = state.limitations;
 					turns = state.turns;
+				} else if (entry.customType === SOURCES_ENTRY) {
+					disabledIds = new Set((entry.data as SourcesState).disabled);
 				}
 			}
-			ctx.ui.setStatus("sourcesift", `${registry.list().length} sources · ${evidence.size} evidence`);
+			status(ctx);
+		}
+
+		function installChrome(ctx: ExtensionContext): void {
+			ctx.ui.setTitle("SourceSift");
+			ctx.ui.setHeader((_tui, theme) => ({
+				invalidate() {},
+				render(width: number): string[] {
+					const title = `${theme.fg("accent", theme.bold("SourceSift"))} ${theme.fg("dim", `v${version}`)}`;
+					const lines = [
+						"",
+						truncateToWidth(
+							`${title}  ${theme.fg("muted", "research from registered sources, answered with cited evidence")}`,
+							width,
+						),
+						truncateToWidth(
+							theme.fg(
+								"dim",
+								`${activeRegistry().list().length} sources · /sources · /evidence · /read S3 · /model · /thinking · /help · Esc interrupt · Ctrl+C exit`,
+							),
+							width,
+						),
+					];
+					if (!ctx.model) {
+						lines.push(
+							truncateToWidth(
+								theme.fg("warning", "No model yet: run /login openrouter (or set OPENROUTER_API_KEY), then /model."),
+								width,
+							),
+						);
+					}
+					lines.push("");
+					return lines;
+				},
+			}));
+			ctx.ui.setFooter((tui, theme) => {
+				requestRender = () => tui.requestRender();
+				return {
+					dispose() {
+						requestRender = undefined;
+					},
+					invalidate() {},
+					render(width: number): string[] {
+						const left = theme.fg(
+							"dim",
+							`${activeRegistry().list().length} sources · ${evidence.size} evidence · ${lastHttp} http · ${turns} turn${turns === 1 ? "" : "s"}`,
+						);
+						const model = ctx.model ? `${ctx.model.id} • ${pi.getThinkingLevel()}` : "no model";
+						const right = theme.fg("dim", model);
+						const pad = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
+						return [truncateToWidth(left + pad + right, width)];
+					},
+				};
+			});
 		}
 
 		pi.on("session_start", (_event, ctx) => {
-			if (ctx.mode === "tui") ctx.ui.setTitle("SourceSift");
+			cache.clear();
+			guidance = readGuidance(config.guidancePath);
+			if (ctx.mode === "tui") installChrome(ctx);
 			restore(ctx);
 		});
 		pi.on("session_tree", (_event, ctx) => restore(ctx));
 		pi.on("session_shutdown", (_event, ctx) => ctx.ui.setStatus("sourcesift", undefined));
 
+		// This tool has no shell story: the model has no bash, and neither does the `!` prefix.
+		pi.on("user_bash", () => ({
+			result: {
+				output: "Shell commands are disabled in ssift. It only reads registered sources and URLs you supply.",
+				exitCode: 1,
+				cancelled: false,
+				truncated: false,
+			},
+		}));
+
 		pi.on("before_agent_start", (event) => {
 			pi.setActiveTools(TOOL_NAMES);
 			const prompt = event.messageType === "user" ? event.prompt : "";
-			current = new Research(config, registry, new Fetcher(config.limits), prompt, { previous: evidence, nextId });
+			const registry = activeRegistry();
+			current = new Research(config, registry, new Fetcher(config.limits, cache), prompt, {
+				previous: evidence,
+				nextId,
+			});
 			repairs = 0;
 			return {
 				systemPrompt: buildInstructions({
@@ -123,6 +265,7 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					retained: [...evidence.values()],
 					previousLimitations: limitations,
 					session: turns > 0,
+					guidance,
 				}),
 			};
 		});
@@ -164,8 +307,8 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					);
 					return { content: [{ type: "text", text: JSON.stringify(reply) }], details: reply };
 				},
-				renderResult(result, _options, theme) {
-					return new Text(theme.fg("muted", summarize(result.details as Reply)), 0, 0);
+				renderResult(result, options, theme) {
+					return renderReply(result, options.expanded, theme);
 				},
 			}),
 		);
@@ -186,8 +329,8 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					const reply = await current.readArticle(params.url);
 					return { content: [{ type: "text", text: JSON.stringify(reply) }], details: reply };
 				},
-				renderResult(result, _options, theme) {
-					return new Text(theme.fg("muted", summarize(result.details as Reply)), 0, 0);
+				renderResult(result, options, theme) {
+					return renderReply(result, options.expanded, theme);
 				},
 			}),
 		);
@@ -239,17 +382,19 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					`Coverage window: ${research.window.start ?? "unbounded"} to ${research.window.end} (${research.window.timezone}); this is a limited source sample.`,
 				);
 			}
-			if (message.stopReason === "length")
+			if (message.stopReason === "length") {
 				notes.push("The model reached its output token limit; the answer may be incomplete.");
+			}
 			const finalNotes = [...new Set(notes)];
 
 			evidence = research.allEvidence();
 			nextId = research.nextId;
 			limitations = finalNotes;
 			turns += 1;
+			lastHttp = research.httpRequests;
 			current = null;
 			const state: SessionState = { evidence: Object.fromEntries(evidence), nextId, limitations, turns };
-			ctx.ui.setStatus("sourcesift", `${registry.list().length} sources · ${evidence.size} evidence`);
+			status(ctx);
 			options.onResult?.({ answer, references, limitations: finalNotes, httpRequests: research.httpRequests });
 			return {
 				entries: [
@@ -266,7 +411,12 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 		});
 
 		pi.registerMessageRenderer(RESULT_MESSAGE, (message, _options, theme) => {
-			const content = typeof message.content === "string" ? message.content : "";
+			const details = message.details as { references?: Reference[]; limitations?: string[] } | undefined;
+			const content = details?.references
+				? renderReferences(details.references, details.limitations ?? [], { links: true })
+				: typeof message.content === "string"
+					? message.content
+					: "";
 			if (!content) return undefined;
 			const styled = content
 				.split("\n")
@@ -281,11 +431,81 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 			return new Text(styled, 0, 0);
 		});
 
+		// Make citations stand out in rendered answers without touching the stored text.
+		pi.registerMarkdownTransformer((markdown, context) =>
+			context.messageType === "assistant" ? markdown.replace(/(?<![*`])\[S(\d+)\](?![*`])/g, "**[S$1]**") : markdown,
+		);
+
+		pi.registerCommand("read", {
+			description: "Read a cited article in full, for example /read S3",
+			getArgumentCompletions: (prefix) => {
+				const items = [...evidence.values()]
+					.filter((item) => item.id.toLowerCase().startsWith(prefix.toLowerCase().replace(/^\[/, "")))
+					.map((item) => ({ value: item.id, label: `${item.id} ${item.title.slice(0, 60)}` }));
+				return items.length ? items : null;
+			},
+			handler: async (args, ctx) => {
+				const id = parseCitation(args);
+				const item = id ? [...evidence.values()].find((candidate) => candidate.id === id) : undefined;
+				if (!item) {
+					ctx.ui.notify(
+						args.trim() ? `No evidence with ID ${args.trim()}. Try /evidence.` : "Usage: /read S3",
+						"warning",
+					);
+					return;
+				}
+				pi.sendUserMessage(
+					`Read [${item.id}] in full (${item.url}) and report what the article adds beyond the feed summary, citing it.`,
+					ctx.isIdle() ? undefined : { deliverAs: "followUp" },
+				);
+			},
+		});
+
 		pi.registerCommand("sources", {
-			description: "List the registered sources available for research",
+			description: "Show the registered sources; in the terminal, enable or disable them for this conversation",
 			handler: async (_args, ctx) => {
-				const lines = registry.list().map((source) => `${source.id}: ${source.name} — ${source.topics.join(", ")}`);
-				ctx.ui.notify(lines.join("\n"), "info");
+				const sources = catalog.list();
+				if (ctx.mode !== "tui") {
+					const lines = sources.map(
+						(source) =>
+							`${disabledIds.has(source.id) ? "off" : "on "} ${source.id}: ${source.name} — ${source.topics.join(", ")}`,
+					);
+					ctx.ui.notify(lines.join("\n"), "info");
+					return;
+				}
+				await ctx.ui.custom<undefined>((tui, theme, _keybindings, done) => {
+					const items: SettingItem[] = sources.map((source) => ({
+						id: source.id,
+						label: source.name,
+						description: source.description,
+						currentValue: disabledIds.has(source.id) ? "disabled" : "enabled",
+						values: ["enabled", "disabled"],
+					}));
+					const list = new SettingsList(
+						items,
+						Math.min(items.length + 2, 16),
+						getSettingsListTheme(),
+						(id, value) => {
+							if (value === "disabled") disabledIds.add(id);
+							else disabledIds.delete(id);
+							pi.appendEntry<SourcesState>(SOURCES_ENTRY, { disabled: [...disabledIds] });
+							status(ctx);
+						},
+						() => done(undefined),
+					);
+					return {
+						render(width: number) {
+							return [theme.fg("accent", theme.bold("Sources for this conversation")), "", ...list.render(width)];
+						},
+						invalidate() {
+							list.invalidate();
+						},
+						handleInput(data: string) {
+							list.handleInput?.(data);
+							tui.requestRender();
+						},
+					};
+				});
 			},
 		});
 

@@ -2,7 +2,7 @@
   "name": "sourcesift-pi",
   "version": "0.0.1",
   "private": true,
-  "description": "SourceSift research tools as a pi package: registered sources, bounded retrieval, and cited answers.",
+  "description": "ssift: a research agent over registered sources with cited evidence, built on pi.",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -31,13 +31,14 @@
     "lint": "biome ci .",
     "format": "biome format --write .",
     "lint:fix": "biome check --write .",
-    "test": "node --test"
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
     "linkedom": "0.18.14",
     "robots-parser": "3.0.1",
-    "rss-parser": "3.13.0"
+    "rss-parser": "3.13.0",
+    "undici": "8.10.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
