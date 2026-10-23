@@ -40,8 +40,10 @@ Inside the chat:
 - `/sources` opens a list where you enable or disable sources for this conversation.
 - `/evidence` lists the citations retained so far.
 - `/read S3` fetches a cited article in full and asks for what it adds.
-- Research results show each retrieved item as `[S1] title — publisher · date`; expand a
-  result to see all of them and the coverage notes.
+- Research results collapse to one line; press Ctrl+O to expand them into `[S1] title —
+  publisher · date` with the coverage notes.
+- `/quiet` hides tool output for the conversation entirely (`/quiet off` shows it again);
+  set `"quiet": true` in `config.json` to start that way.
 - Pi.s `/model`, `/thinking`, `/login`, `/new`, `/resume`, `/fork`, and `/help` work as usual.
 - There is no shell: the model has no bash tool, and the `!` prefix is disabled.
 
@@ -77,7 +79,8 @@ Optional `config.json`:
     }
   ],
   "limits": { "maxSources": 3, "maxArticles": 6, "feedCacheSeconds": 600 },
-  "guidance": "~/notes/research-guidance.md"
+  "guidance": "~/notes/research-guidance.md",
+  "quiet": false
 }
 ```
 

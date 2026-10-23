@@ -42,6 +42,7 @@ describe("loadConfig", () => {
 		assert.deepEqual(config.custom, []);
 		assert.deepEqual(config.limits, DEFAULT_LIMITS);
 		assert.equal(config.guidancePath, join(dir, "guidance.md"));
+		assert.equal(config.quiet, false);
 	});
 
 	it("fails when an explicitly selected file is missing", () => {

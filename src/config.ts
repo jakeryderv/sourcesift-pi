@@ -23,6 +23,8 @@ export interface Limits {
 export interface Config {
 	/** Optional Markdown file of interests, priorities, and presentation preferences. */
 	guidancePath: string;
+	/** Start conversations with tool output hidden; /quiet toggles it. */
+	quiet: boolean;
 	timezone: string;
 	recentDays: number;
 	disabled: string[];
@@ -86,6 +88,7 @@ export function loadConfig(path: string | undefined = process.env.SOURCESIFT_CON
 	const disabled = Array.isArray(raw.disabled) ? raw.disabled.map(String) : [];
 	return {
 		guidancePath: typeof raw.guidance === "string" ? raw.guidance : join(configHome(), "guidance.md"),
+		quiet: raw.quiet === true,
 		timezone: raw.timezone === undefined ? "UTC" : validTimezone(raw.timezone),
 		recentDays: typeof raw.recent_days === "number" ? Math.min(90, Math.max(1, raw.recent_days)) : 7,
 		disabled,

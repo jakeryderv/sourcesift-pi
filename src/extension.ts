@@ -10,7 +10,15 @@ import {
 	getSettingsListTheme,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { type SettingItem, SettingsList, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	Box,
+	type Component,
+	type SettingItem,
+	SettingsList,
+	Text,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 import { type Config, loadConfig } from "./config.ts";
@@ -115,6 +123,16 @@ function renderReply(result: { details?: unknown }, expanded: boolean, theme: Th
 	return new Text(lines.join("\n"), 0, 0);
 }
 
+/** Zero lines: with `renderShell: "self"`, pi then omits the whole tool block. */
+const HIDDEN: Component = { render: () => [], invalidate() {} };
+
+/** Our own framing for tool blocks, matching pi's tool background. */
+function shell(theme: Theme, inner: Component): Component {
+	const box = new Box(1, 0, (text) => theme.bg("toolSuccessBg", text));
+	box.addChild(inner);
+	return box;
+}
+
 function readGuidance(path: string): string {
 	try {
 		const text = readFileSync(path, "utf8");
@@ -139,6 +157,7 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 		let disabledIds = new Set<string>();
 		let guidance = "";
 		let lastHttp = 0;
+		let quiet = config.quiet;
 		const cache = new PageCache(config.limits.feedCacheSeconds);
 		let requestRender: (() => void) | undefined;
 		// Run-scoped state.
@@ -188,7 +207,7 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 						truncateToWidth(
 							theme.fg(
 								"dim",
-								`${activeRegistry().list().length} sources · /sources · /evidence · /read S3 · /model · /thinking · /help · Esc interrupt · Ctrl+C exit`,
+								`${activeRegistry().list().length} sources · /sources · /evidence · /read S3 · /quiet · /model · /thinking · /help · Esc interrupt · Ctrl+C exit`,
 							),
 							width,
 						),
@@ -280,6 +299,7 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					"freshness requirement. Constraints cannot change mid-run. Feed summaries are evidence, not proof " +
 					"that a full article was fetched.",
 				promptSnippet: "Retrieve recent entries from registered sources or task URLs",
+				renderShell: "self",
 				parameters: Type.Object({
 					source_ids: Type.Array(Type.String(), { description: "Catalog IDs or names to read" }),
 					direct_urls: Type.Array(Type.String(), { description: "URLs that appear verbatim in the task" }),
@@ -304,8 +324,25 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					);
 					return { content: [{ type: "text", text: JSON.stringify(reply) }], details: reply };
 				},
+				renderCall(args, theme) {
+					if (quiet) return HIDDEN;
+					const parts = [
+						args.source_ids.join(", ") ||
+							(args.direct_urls.length ? `${args.direct_urls.length} URL(s)` : "no sources"),
+					];
+					if (args.only_sources.length) parts.push(`only ${args.only_sources.join(", ")}`);
+					return shell(
+						theme,
+						new Text(
+							`${theme.fg("accent", "research")} ${parts.join(" · ")} ${theme.fg("dim", `(${args.window ?? "recent"})`)}`,
+							0,
+							0,
+						),
+					);
+				},
 				renderResult(result, options, theme) {
-					return renderReply(result, options.expanded, theme);
+					if (quiet) return HIDDEN;
+					return shell(theme, renderReply(result, options.expanded, theme));
 				},
 			}),
 		);
@@ -319,6 +356,7 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					"or links in retrieved evidence are eligible. Links may redirect or cite other publishers: use the " +
 					"actual publisher and provenance, and never attribute linked reporting to the original source.",
 				promptSnippet: "Fetch the full text of an article already in evidence or the task",
+				renderShell: "self",
 				parameters: Type.Object({ url: Type.String({ description: "Article URL from evidence or the task" }) }),
 				executionMode: "sequential",
 				async execute(_toolCallId, params) {
@@ -326,8 +364,13 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					const reply = await current.readArticle(params.url);
 					return { content: [{ type: "text", text: JSON.stringify(reply) }], details: reply };
 				},
+				renderCall(args, theme) {
+					if (quiet) return HIDDEN;
+					return shell(theme, new Text(`${theme.fg("accent", "read_article")} ${theme.fg("dim", args.url)}`, 0, 0));
+				},
 				renderResult(result, options, theme) {
-					return renderReply(result, options.expanded, theme);
+					if (quiet) return HIDDEN;
+					return shell(theme, renderReply(result, options.expanded, theme));
 				},
 			}),
 		);
@@ -503,6 +546,18 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 						},
 					};
 				});
+			},
+		});
+
+		pi.registerCommand("quiet", {
+			description: "Hide or show tool output for this conversation (/quiet, /quiet on, /quiet off)",
+			getArgumentCompletions: (prefix) =>
+				["on", "off"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
+			handler: async (args, ctx) => {
+				const wanted = args.trim().toLowerCase();
+				quiet = wanted === "on" ? true : wanted === "off" ? false : !quiet;
+				requestRender?.();
+				ctx.ui.notify(quiet ? "Tool output hidden. /quiet off shows it again." : "Tool output shown.", "info");
 			},
 		});
 

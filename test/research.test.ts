@@ -13,6 +13,7 @@ const FETCHED = new Date("2026-10-23T11:59:00Z");
 function config(overrides: Partial<Config["limits"]> = {}): Config {
 	return {
 		guidancePath: "",
+		quiet: false,
 		timezone: "America/Chicago",
 		recentDays: 7,
 		disabled: [],
