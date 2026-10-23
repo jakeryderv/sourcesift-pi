@@ -36,7 +36,6 @@ const RESULT_MESSAGE = "sourcesift-result";
 const REPAIR_MESSAGE = "sourcesift-repair";
 const NO_RETRIEVAL = "No external sources were retrieved; current information has not been verified.";
 const MAX_GUIDANCE_BYTES = 32 * 1024;
-const COLLAPSED_ITEMS = 6;
 
 interface SessionState {
 	evidence: Record<string, Evidence>;
@@ -108,13 +107,11 @@ function evidenceLine(item: Evidence, theme: Theme, width: number): string {
 function renderReply(result: { details?: unknown }, expanded: boolean, theme: Theme, width = 100): Text {
 	const reply = result.details as Reply | undefined;
 	if (!reply) return new Text(theme.fg("muted", "no result"), 0, 0);
-	const lines = [theme.fg("muted", summarize(reply))];
-	const shown = expanded ? reply.evidence : reply.evidence.slice(0, COLLAPSED_ITEMS);
-	for (const item of shown) lines.push(evidenceLine(item, theme, width));
-	if (!expanded && reply.evidence.length > shown.length) {
-		lines.push(theme.fg("dim", `… ${reply.evidence.length - shown.length} more (expand to see all)`));
-	}
-	if (expanded) for (const note of reply.limitations) lines.push(theme.fg("warning", `note: ${note}`));
+	// Collapsed (the default; Ctrl+O toggles) is one line. Expanded lists every item and the notes.
+	const lines = [theme.fg("muted", `${summarize(reply)}${expanded ? "" : " · ctrl+o to list"}`)];
+	if (!expanded) return new Text(lines.join("\n"), 0, 0);
+	for (const item of reply.evidence) lines.push(evidenceLine(item, theme, width));
+	for (const note of reply.limitations) lines.push(theme.fg("warning", `note: ${note}`));
 	return new Text(lines.join("\n"), 0, 0);
 }
 
