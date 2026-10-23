@@ -1,0 +1,49 @@
+{
+  "name": "sourcesift-pi",
+  "version": "0.0.1",
+  "private": true,
+  "description": "SourceSift research tools as a pi package: registered sources, bounded retrieval, and cited answers.",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "Apache-2.0",
+  "pi": {
+    "extensions": [
+      "./src/extension.ts"
+    ]
+  },
+  "bin": {
+    "ssift": "./bin/ssift.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "chat": "node bin/ssift.js",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@mozilla/readability": "0.6.0",
+    "linkedom": "0.18.14",
+    "robots-parser": "3.0.1",
+    "rss-parser": "3.13.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
+  }
+}
