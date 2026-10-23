@@ -1,7 +1,7 @@
 /** SourceSift as a pi extension: research tools, grounding rules, and citation checks. */
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, type ExtensionContext, defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
@@ -9,7 +9,15 @@ import { type Config, loadConfig } from "./config.ts";
 import { Fetcher } from "./http.ts";
 import { buildInstructions } from "./prompt.ts";
 import { renderReferences } from "./render.ts";
-import { citationIds, type Evidence, type Reference, type Reply, Research, WINDOW_NAMES, type WindowName } from "./research.ts";
+import {
+	citationIds,
+	type Evidence,
+	type Reference,
+	type Reply,
+	Research,
+	WINDOW_NAMES,
+	type WindowName,
+} from "./research.ts";
 import { BUILTIN_SOURCES, SourceRegistry } from "./sources.ts";
 
 const TOOL_NAMES = ["research", "read_article"];
@@ -135,7 +143,9 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 				parameters: Type.Object({
 					source_ids: Type.Array(Type.String(), { description: "Catalog IDs or names to read" }),
 					direct_urls: Type.Array(Type.String(), { description: "URLs that appear verbatim in the task" }),
-					only_sources: Type.Array(Type.String(), { description: "Exact publication names when the task restricts sources" }),
+					only_sources: Type.Array(Type.String(), {
+						description: "Exact publication names when the task restricts sources",
+					}),
 					window: Type.Optional(
 						Type.Union(
 							WINDOW_NAMES.map((name) => Type.Literal(name)),
@@ -146,7 +156,12 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 				executionMode: "sequential",
 				async execute(_toolCallId, params) {
 					if (!current) throw new Error("No active research run.");
-					const reply = await current.research(params.source_ids, params.direct_urls, params.only_sources, (params.window ?? "recent") as WindowName);
+					const reply = await current.research(
+						params.source_ids,
+						params.direct_urls,
+						params.only_sources,
+						(params.window ?? "recent") as WindowName,
+					);
 					return { content: [{ type: "text", text: JSON.stringify(reply) }], details: reply };
 				},
 				renderResult(result, _options, theme) {
@@ -200,7 +215,9 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 							display: false,
 							content:
 								"Citation check failed: " +
-								(unknown.length ? `unknown evidence IDs ${unknown.join(", ")}. ` : "retrieved evidence exists but nothing was cited. ") +
+								(unknown.length
+									? `unknown evidence IDs ${unknown.join(", ")}. `
+									: "retrieved evidence exists but nothing was cited. ") +
 								"Rewrite the complete answer using only existing evidence IDs, citing supporting evidence as [S1].",
 						},
 					],
@@ -211,7 +228,9 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 			const references = research.references(answer);
 			const notes = research.attempted || references.length ? research.limitationsFor(references) : [NO_RETRIEVAL];
 			if (references.some((ref) => !research.evidence.has(ref.url))) {
-				notes.push("Some cited evidence is retained from earlier turns, not freshly retrieved; see retrieval timestamps.");
+				notes.push(
+					"Some cited evidence is retained from earlier turns, not freshly retrieved; see retrieval timestamps.",
+				);
 				notes.push(...limitations);
 			}
 			if (unknown.length) notes.push(`The answer cites IDs with no retrieved evidence: ${unknown.join(", ")}.`);
@@ -220,7 +239,8 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					`Coverage window: ${research.window.start ?? "unbounded"} to ${research.window.end} (${research.window.timezone}); this is a limited source sample.`,
 				);
 			}
-			if (message.stopReason === "length") notes.push("The model reached its output token limit; the answer may be incomplete.");
+			if (message.stopReason === "length")
+				notes.push("The model reached its output token limit; the answer may be incomplete.");
 			const finalNotes = [...new Set(notes)];
 
 			evidence = research.allEvidence();
@@ -250,7 +270,13 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 			if (!content) return undefined;
 			const styled = content
 				.split("\n")
-				.map((line) => (line.startsWith("Note:") ? theme.fg("warning", line) : line.startsWith("[S") ? theme.fg("accent", line) : theme.fg("muted", line)))
+				.map((line) =>
+					line.startsWith("Note:")
+						? theme.fg("warning", line)
+						: line.startsWith("[S")
+							? theme.fg("accent", line)
+							: theme.fg("muted", line),
+				)
 				.join("\n");
 			return new Text(styled, 0, 0);
 		});
@@ -270,7 +296,9 @@ export function createSourceSiftExtension(options: SourceSiftOptions = {}) {
 					ctx.ui.notify("No evidence retained yet.", "info");
 					return;
 				}
-				const lines = [...evidence.values()].map((item) => `[${item.id}] ${item.title} — ${item.publisher} (${item.kind}, retrieved ${item.retrieved_at})`);
+				const lines = [...evidence.values()].map(
+					(item) => `[${item.id}] ${item.title} — ${item.publisher} (${item.kind}, retrieved ${item.retrieved_at})`,
+				);
 				ctx.ui.notify(lines.join("\n"), "info");
 			},
 		});

@@ -1,0 +1,461 @@
+---
+title: "Conversational Research Assistant"
+subtitle: "Conceptual Architecture and Design Rationale"
+lang: en
+format:
+  pdf:
+    documentclass: scrartcl
+    pdf-engine: pdflatex
+    papersize: letter
+    fontsize: 10pt
+    geometry:
+      - margin=0.8in
+    number-sections: true
+    toc: false
+    colorlinks: true
+    linkcolor: teal
+    urlcolor: teal
+    keep-tex: false
+    include-in-header:
+      text: |
+        \usepackage{tikz}
+        \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+        \usepackage{scrlayer-scrpage}
+        \clearpairofpagestyles
+        \ihead{\small Conversational Research | Design Overview}
+        \cfoot{\pagemark}
+        \setkomafont{pageheadfoot}{\normalfont\sffamily\color{gray}}
+        \setkomafont{disposition}{\normalfont\sffamily\bfseries}
+        \KOMAoptions{headsepline=0.3pt}
+        \setlength{\emergencystretch}{2em}
+        \raggedbottom
+execute:
+  enabled: false
+---
+
+<!--
+PDF export, from the repository root:
+  quarto render architecture-overview.qmd --to pdf --output-dir output/pdf
+Requires Quarto and a TeX distribution with TikZ. The diagram is embedded vector
+artwork; rendering does not execute application code or contact a model provider.
+PDF formatting reference: https://quarto.org/docs/output-formats/pdf-basics.html
+-->
+
+# Summary and problem statement
+
+The proposed system is a conversational research assistant that turns a natural-language
+request and optional personal context into a bounded, source-grounded briefing.
+It helps users discover relevant reporting, inspect its provenance, and ask
+follow-up questions without manually coordinating multiple publications.
+
+**The problem.** Staying informed requires more than collecting links. A user
+must choose sources, establish what is current, resolve overlapping coverage,
+judge relevance, and preserve enough evidence to check the resulting summary.
+Generic summaries can hide those choices; manual research repeats them for every
+question. The design makes source selection, evidence, and coverage limitations
+part of the research interaction.
+
+**The intended outcome.** Reduce the effort required to produce an inspectable
+briefing while preserving the user's control over scope and context. Success
+means relevant, supportable findings with useful uncertainty disclosures. A fluent
+answer or a long reference list alone is insufficient.
+
+## Primary user story
+
+> As a professional following developments across several fields, I want to ask
+> what matters for my work, inspect the supporting material, and refine the
+> question in conversation so that I can make an informed judgment without
+> repeatedly searching and comparing publications myself.
+
+For example, a user supplies a short description of their marketing practice and
+asks, “Check tech and AI this week for developments relevant to my clients.” They
+receive a scoped briefing, then ask which finding is supported by primary
+material or request a closer reading of one article. The conversation retains
+its evidence identities and makes clear when earlier evidence is being reused.
+
+## Design scope
+
+Interactive research is the primary experience. One-off requests and integration
+with other workflows share the same research contracts. The core scope includes
+explicit context, registered sources, direct article requests, bounded retrieval,
+cited responses, and temporary multi-turn conversations.
+
+A deliberately small collection establishes an understandable coverage boundary.
+News, technology, business, or another professional domain can provide an initial
+setting; the architecture does not depend on a particular subject or publication.
+Broader coverage, structured recommendations, extensions, and saved archives should
+follow demonstrated needs and explicit acceptance criteria.
+
+**Document intent.** This is a design proposal: its contracts describe required
+behavior, and its evaluation criteria describe how to establish that behavior.
+It does not report implementation status or measured performance. Sections 2
+through 4 define responsibilities and contracts; Sections 5 and 6 explain the
+rationale and working slice; Sections 7 and 8 address evaluation and risk.
+
+{{< pagebreak >}}
+
+# Use cases, boundaries, and responsibilities
+
+## Representative use cases
+
+| User intent | Expected outcome | Important boundary |
+|:-----------------------|:-----------------------|:-----------------------|
+| “Check news” | A recent briefing within the stated coverage and time window. | No claim of complete national, local, or global coverage. |
+| “What matters for my project?” | Findings related to explicitly supplied priorities. | No inferred profile or automatic preference learning. |
+| “Use only this publication” | Research constrained to the named source, or an explanation of unavailability. | The interpreted restriction must reach the research contract. |
+| “Summarize this article” | An account grounded in accessible article text, with access limitations. | No paywall bypass or unsupported document-format conversion. |
+| “Explain the second finding” | A follow-up using stable references and, when needed, additional retrieval. | Retained evidence is not automatically refreshed. |
+
+## System boundary
+
+The research system owns request validation, enabled-source definitions, research budgets,
+retrieval controls, evidence identity, result validation, and temporary session
+state. It presents progress and final results without making the interface the
+owner of research policy. An ordinary request needs no application database.
+
+The user owns the task, selected personal guidance, supplied documents, model
+choice, and decision to act on findings. Personal guidance helps establish
+relevance; the current request establishes the task. The assistant does not search
+arbitrary local files for hidden instructions or learn preferences implicitly.
+
+Publishers own their content, availability, access rules, and metadata. The model
+service supplies interpretation and synthesis. Both are external dependencies:
+The system cannot guarantee their uptime, correctness, or retention practices.
+
+## Trust and information boundaries
+
+**User material to model service.** Selected context, conversation content, and
+retrieved evidence may leave the local environment for inference. Local execution
+does not mean offline or local-only processing. Credentials are separate from
+research context and are not research evidence.
+
+**Public content to evidence.** Retrieved text and attached research documents are
+untrusted material. They cannot legitimately authorize new capabilities, alter
+configuration, or override the task. Separation and retrieval controls reduce
+risk; they do not establish complete resistance to prompt injection.
+
+**Source choice to network access.** A named-publication instruction constrains
+semantic selection once interpreted and declared. It is not a domain allowlist:
+feeds can link or redirect to another publisher. References preserve the actual
+destination. Independent network controls restrict retrieval to public web
+destinations and enforce access and resource limits.
+
+**Outside the core scope:** autonomous external actions, general web
+crawling/search, authenticated publisher accounts, persistent monitoring,
+historical archives, and guaranteed factual adjudication.
+
+{{< pagebreak >}}
+
+# High-level architecture
+
+The architecture separates user interaction, research coordination, evidence
+acquisition, and validation. These are logical responsibilities, not deployment
+units. All entry points use the same underlying contracts.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw=teal!65!black, rounded corners=3pt, fill=teal!4,
+    align=center, font=\small, minimum height=0.82cm, text width=5.0cm},
+  ext/.style={box, draw=gray, fill=gray!7, text width=3.4cm},
+  arrow/.style={-{Stealth[length=2mm]}, thick, draw=teal!65!black},
+  every node/.style={outer sep=3pt}
+]
+\node[box] (user) at (0,0) {User task and selected context};
+\node[box] (interface) at (0,-1.3) {Interaction boundary\\Conversation or one-off request};
+\node[box] (coord) at (0,-2.9) {Research coordinator\\Intent, scope, budgets\\Session state};
+\node[box] (evidence) at (0,-4.7) {Evidence acquisition\\Selection and retrieval\\Provenance};
+\node[box] (result) at (0,-6.5) {Validation and result boundary\\Answer, references, limitations, usage};
+\node[ext] (model) at (5.1,-2.9) {External model service\\Interpretation and synthesis};
+\node[ext] (publishers) at (5.1,-4.7) {External publishers\\Feeds and articles};
+\draw[arrow] (user) -- (interface);
+\draw[arrow,<->] (interface) -- (coord);
+\draw[arrow,<->] (coord) -- (evidence);
+\draw[arrow,<->] (coord) -- (model);
+\draw[arrow,<->] (evidence) -- (publishers);
+\draw[arrow] (evidence) -- (result);
+\draw[arrow] (coord.west) -- ++(-0.6,0) |- (result.west);
+\draw[arrow] (result.west) -- ++(-1.0,0) |- (interface.west);
+\begin{scope}[on background layer]
+  \node[draw=gray, dashed, rounded corners=5pt,
+    fit=(interface)(coord)(evidence)(result), inner sep=0.22cm] {};
+\end{scope}
+\end{tikzpicture}
+\caption{Logical research flow. The dashed boundary encloses the research system's
+responsibilities. External interactions carry selected context or public content;
+arrows describe information flow, not unrestricted authority.}
+\end{figure}
+```
+
+## One turn through the system
+
+1. **Establish the request.** Validate the task, selected context, configuration,
+   and remaining session capacity. Capture the research clock and applicable limits.
+2. **Interpret and gather.** Select enabled sources by meaning and coverage.
+   Retrieve bounded material, preserve provenance, and distinguish summaries from
+   full articles. Further retrieval can follow when additional evidence is needed.
+3. **Synthesize and validate.** Draft an answer, resolve its citation identifiers
+   against retained evidence, and attach coverage and freshness limitations.
+4. **Commit and present.** Commit the completed turn only after validation succeeds.
+   Show the final result; discard provisional output on failure or cancellation.
+
+The coordinator may alternate between evidence gathering and synthesis within a
+turn. Its authority remains bounded throughout that loop. Progress updates help
+the user understand activity; they do not constitute an accepted result.
+
+{{< pagebreak >}}
+
+# Contracts and invariants
+
+## Request, source, evidence, and result
+
+**Request contract.** A request contains a nonempty task and optional labeled
+context. Personal guidance, background material, and per-turn documents have
+distinct roles. Inputs are bounded and rejected when invalid or oversized, rather
+than silently cut to fit. Documents do not themselves grant permission to retrieve
+every URL they contain.
+
+**Source contract.** A registered source has a stable identity, descriptive
+coverage, access links, and declared capabilities. Metadata supports semantic
+selection; it is not a required command vocabulary. Disabled sources are removed
+before selection. Unknown or unavailable named-only sources do not silently
+substitute other publications. Recent-feed access does not imply historical search.
+
+**Evidence contract.** Each item retains a citation identity, title, requested and
+actual location, retrieval origin, publisher, available dates, retrieval time,
+content kind, and limitations. A feed summary is labeled as such. Missing metadata
+stays unknown. Repeated URLs or identical normalized content can be deduplicated;
+recognizing distinct reports about the same event requires a separate semantic
+judgment and should not be assumed from basic deduplication.
+
+**Result contract.** A completed response carries answer text, references,
+limitations, model identity, reported usage, selected sources, a research window
+when applicable, and a retrieval-request count. Supplied documents remain labeled
+context rather than invented external references. A result can be useful despite
+partial coverage, provided that its claims and limitations remain supportable.
+
+## Freshness and grounding
+
+Calendar requests use an explicit time zone and a captured clock. Publication
+time establishes freshness; an update time is a labeled fallback when publication
+time is absent. Retrieval time is never proof of publication time. Unknown dates
+require uncertainty disclosure, and known future or out-of-window entries are
+excluded from the requested window.
+
+Citation validation rejects invented identifiers and permits a bounded repair
+attempt. **A valid reference identifier establishes provenance, not entailment.**
+Whether a cited passage supports a particular claim, whether a selection is
+relevant, and whether a summary is fair remain evaluation questions. With no
+usable retrieved evidence, the response must disclose inability to verify the
+requested research rather than manufacture a briefing.
+
+## Session and failure semantics
+
+Only validated successful turns enter completed history. Errors, cancellation,
+and budget failures preserve the previous completed state. Citation identities
+remain stable as evidence is revisited or expanded; earlier results preserve their
+original provenance. Retained evidence is labeled as retained.
+
+Configured context is snapshotted when a session begins. Reset reloads it and
+clears history atomically; an unreadable input preserves the existing session.
+Per-turn budgets restart, while cumulative history remains bounded. Reaching a
+session limit requires a new session, without silent truncation or compression.
+Quitting discards conversation state. This application lifecycle does not imply
+deletion from external model-service systems.
+
+{{< pagebreak >}}
+
+# Design rationale, tradeoffs, and assumptions
+
+## Decisions and their costs
+
+| Decision and rationale | Tradeoff or limitation | Reconsider when |
+|:-----------------------|:-----------------------|:-----------------------|
+| **Registered sources first.** Makes coverage and provenance inspectable and limits the search space. | Relevant reporting outside the catalog can be missed; selection inherits editorial bias. | Labeled tasks repeatedly require unavailable coverage. |
+| **Semantic selection.** Users express intent without memorizing categories or feed names. | Interpretation varies by model; explicit restrictions can be misunderstood before enforcement. | Fixed evaluation cases reveal recurring scope errors. |
+| **Shared research contracts.** Conversation, one-off use, and integrations follow the same rules. | Interface convenience cannot bypass core validation or budgets. | A new interaction needs a real domain capability, not merely a different presentation. |
+| **Explicit context and temporary state.** Personalization stays understandable and needs little setup. | Users repeat context across sessions; there is no resume or automatic learning. | Repeated workflows justify consent, retention, and deletion policies. |
+| **Bounded research with partial results.** Latency and resource use remain constrained; one failed source need not erase useful evidence. | Evidence caps and access failures can bias a briefing toward what is easiest to retrieve. | Measured quality gains justify larger budgets. |
+| **Validated completion after provisional drafts.** The interface can remain responsive without treating incomplete text as accepted history. | Streaming is not final; users may see a draft replaced or removed. | An alternative preserves cancellation and evidence integrity demonstrably. |
+
+## Assumptions
+
+The user can express a sufficiently clear request and supply relevant context.
+The selected model can use the research tools and follow scope instructions well
+enough to pass the evaluation cases. Public publishers provide enough accessible
+text and metadata for the intended task. Network and inference access are available,
+and the user accepts sending selected material to the configured service.
+
+The intended workload is an individual's bounded research conversation, with one
+active turn per session. This scope does not establish multi-user isolation,
+service-level availability, or organizational compliance requirements. Source
+metadata needs periodic review as editorial coverage and access links change.
+
+## Limits on the design's claims
+
+Source reputation is useful context, not proof of every statement. An official
+publication may be authoritative about its own announcement while offering a
+partial perspective. Independent reporting may add context without becoming a
+primary source. The assistant should preserve these distinctions and expose
+conflicts rather than flatten them into unwarranted certainty.
+
+More sources, larger budgets, or a stronger model may improve particular cases,
+but none guarantees comprehensive retrieval or factual correctness. These are
+changes to evaluate against a recorded baseline, not automatic quality upgrades.
+
+{{< pagebreak >}}
+
+# Definition of a working slice
+
+A working slice crosses the entire user-to-evidence-to-answer path. It is more
+than a working interface or a successful model response. The minimum useful
+slice is a short research conversation over a bounded collection, with explicit
+context, inspectable references, bounded resource use, and recoverable failures.
+
+## Demonstration scenario
+
+1. Start a session, inspect the available source coverage, and supply a short
+   project brief or personal priorities explicitly.
+2. Ask for recent developments relevant to that brief. Receive findings, source
+   references, the research window, and any coverage or access limitations.
+3. Follow up on one finding. Verify that the reference keeps its identity and that
+   any newly retrieved detail is distinguishable from retained material.
+4. Cancel another turn. Verify that the prior answer and completed history remain
+   intact and that a subsequent request can proceed.
+5. Repeat a bounded request through the one-off interface. Its evidence and failure
+   rules should agree with the conversational path.
+
+## Acceptance evidence
+
+| Area | What must be demonstrated |
+|:---------------------|:-----------------------------------------------------|
+| Intent and context | Paraphrased topic requests select relevant enabled sources; explicit context affects relevance without changing the requested task. |
+| Scope | Named-only constraints are respected once declared; an unknown named source produces a limitation, not substitution. |
+| Provenance | Every emitted external citation resolves to retained evidence with honest content-kind and date labels. |
+| Failure behavior | Unavailable sources and empty evidence produce useful partial coverage or explicit inability; no fabricated findings. |
+| Conversation | Follow-ups retain citation identity; cancellation and failed turns do not commit incomplete state. |
+| Budgets | Input, retrieval, model, elapsed-time, and history limits are exercised and produce understandable outcomes. |
+| Usability | Submission, completion, attachment inspection, cancellation, and reset remain discoverable and responsive. |
+
+## Completion gate
+
+Acceptance combines repeatable contract and interaction checks with live research
+trials and review of captured evidence. Automated checks exercise mechanisms;
+review assesses the meaning of answers. A controlled test cannot demonstrate
+publisher availability, and a successful live answer cannot establish correct
+behavior across failure paths.
+
+A compact acceptance set should cover general discovery, overlapping topics,
+context-driven relevance, named-source restrictions, unknown sources, unavailable
+content, ambiguous dates, duplicate material, and conversational follow-up. Include
+cases where the correct outcome is an explicit inability to verify information.
+
+A slice is ready for broader use when its required contracts pass, reviewers can
+trace its factual claims to evidence, and failures remain understandable and
+recoverable. Record unresolved quality issues and the tested scope. A small
+successful demonstration is evidence of feasibility; broader reliability and
+usefulness require repeated trials and user evaluation.
+
+{{< pagebreak >}}
+
+# Evaluation, metrics, and tracking
+
+## Evaluation strategy
+
+Use three complementary forms of evaluation. Controlled cases test contracts and
+failure paths reproducibly. Live trials test the complete research flow under
+real access conditions and model behavior. User tasks test whether the resulting
+briefing reduces effort while remaining understandable and verifiable. Label
+synthetic content clearly so it cannot be mistaken for real publisher evidence.
+
+Each evaluation record should capture the task and context, source collection,
+model settings, research window, answer, evidence, limitations, elapsed time, and
+resource use. Retain enough information to explain a result and compare changes.
+Model-reported token counts describe consumption; monetary cost requires separate
+pricing information. Evaluation records are distinct from ordinary conversation
+history and should be retained only under an explicit policy.
+
+## Measures and interpretation
+
+| Measure | Evaluation method and interpretation |
+|:---------------------|:-----------------------------------------------------|
+| **Selection compliance** | Compare selected sources with the task's allowed and expected sets. Compliance does not establish optimal relevance or complete recall. |
+| **Evidence integrity** | Require every accepted citation to resolve to recorded evidence. Target zero unknown identifiers; verify provenance and content-kind labels. |
+| **Claim support** | Review factual claims against their cited passages. Report supported claims / all reviewed factual claims; classify partial support, contradictions, and unsupported claims separately. |
+| **Freshness and disclosure** | Check time-window rules and review whether unknown dates, inaccessible content, retained evidence, and coverage gaps are disclosed. |
+| **Relevance and usefulness** | Use a consistent rubric tied to the task and personal context. Score useful findings and redundant stories; evaluate recall only where a defensible comparison set exists. |
+| **Reliability and resource use** | Track completion and failure types, latency, model calls, tokens, and retrieval count. Report repeated-run distributions and budget violations, not just a best-case result. |
+| **Interaction quality** | Exercise cancellation and reset; observe task completion, correction effort, and whether users can inspect and understand the evidence. |
+
+## Tracking and decision rules
+
+Maintain a stable acceptance set alongside exploratory cases. Record the design
+change, evaluation conditions, reviewer, date, and results for each comparison.
+Separate automated checks, model-assisted judgments, and independent human review.
+For subjective measures, define rating anchors and examine reviewer disagreement.
+Report sample size and uncertainty; a small passing set is not a general accuracy
+estimate or a latency guarantee.
+
+Treat scope violations, invented references, and loss of completed session state
+as acceptance failures. Review other quality and performance changes against
+predefined targets for the intended workload. Link each regression to a case,
+expected behavior, proposed correction, and verification evidence. Expand the
+acceptance set before making broader coverage claims.
+
+Keep detailed prompts and evidence access-controlled and retain them only as long
+as needed for review. Prefer sanitized aggregate records for shared progress
+tracking. Operational observation should expose failures and resource use without
+silently turning personal research into a permanent analytics collection.
+
+{{< pagebreak >}}
+
+# Risk assessment and evolution
+
+The priorities below are qualitative design judgments based on potential impact and expected
+exposure. They are not measured incident probabilities. The system owner
+is responsible for control verification and evaluation; users control which context
+they supply and how they use the output.
+
+| Risk / priority | Design response and residual exposure |
+|:---------------------|:-----------------------------------------------------|
+| **Unsupported synthesis / high** | Provenance and citation validation make evidence inspectable. A real citation can still fail to support a claim; claim review remains necessary. |
+| **Malicious content / high** | Documents are separated from instructions; retrieval authority and budgets are bounded. Adversarial content can still influence model interpretation. |
+| **Sensitive-context exposure / high** | Context is explicitly selected and credentials are separate. Selected text still reaches the model service; evaluation files can also retain private material. |
+| **Unsafe retrieval / high** | Public-address checks, redirect controls, access-rule checks, and bounded responses reduce exposure. These controls need regression coverage as retrieval changes. |
+| **Coverage bias or stale evidence / medium** | Small catalog, date labels, and retained-evidence disclosures make limits visible. Missing sources, undated items, and repeated stories can distort the briefing. |
+| **Dependency outage or drift / medium** | Partial results, explicit errors, and bounded execution contain failures. Publisher changes and model behavior changes can still reduce usefulness. |
+| **Cost or latency growth / medium** | Per-turn and session limits bound work. Long histories and higher configured budgets can still increase consumption; there is no dollar-denominated budget guarantee. |
+
+## Evolution criteria
+
+**Quality improvements** should be driven by observed research and interaction
+failures: improve relevance judgments, explain why findings matter, and evaluate
+duplicate-story handling on labeled examples. A broader catalog needs both access
+verification and new acceptance cases for its geographic or topical claims.
+
+**Extensions** should reuse proven contracts once concrete use cases justify them.
+Executable third-party capabilities would add a trusted-code boundary and require
+clear enablement, compatibility, and failure semantics. Extensibility should not
+weaken evidence, scope, or resource contracts.
+
+**Persistence** should follow a demonstrated need for saved research or repeated
+workflows. It requires explicit retention, deletion, provenance-refresh, and
+cross-session identity rules. Temporary research must remain usable independently.
+
+## Open design questions
+
+Before expanding the scope, resolve the decisions that affect user trust:
+
+- What evidence of source quality and coverage is sufficient to admit a new source,
+  and how often should that judgment be revisited?
+- When should the assistant ask for clarification rather than choose an
+  interpretation, especially for restrictive or ambiguous requests?
+- What degree of claim support and usefulness is acceptable for the intended task,
+  and who has authority to approve those thresholds?
+- If research is saved, how will users inspect, refresh, export, and delete it,
+  and how will stale evidence be distinguished from current findings?
+
+Record each consequential decision with its motivation, alternatives, expected
+benefit, accepted cost, and evidence that would trigger reconsideration. This
+keeps the architecture accountable to user needs as the system evolves.

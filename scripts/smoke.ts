@@ -22,7 +22,9 @@ const first = reply.evidence[0];
 if (first) {
 	const followUp = await research.readArticle(first.url);
 	const article = followUp.evidence.find((item) => item.id === first.id);
-	console.log(`\nread_article ${first.id}: kind=${article?.kind} text=${article?.text.length ?? 0} chars publisher=${article?.publisher}`);
+	console.log(
+		`\nread_article ${first.id}: kind=${article?.kind} text=${article?.text.length ?? 0} chars publisher=${article?.publisher}`,
+	);
 	for (const note of followUp.limitations.filter((n) => !reply.limitations.includes(n))) console.log(`  note: ${note}`);
 }
 console.log(`\ntotal http requests: ${research.httpRequests}`);

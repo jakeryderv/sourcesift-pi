@@ -1,2 +1,11 @@
 node_modules/
 *.log
+coverage/
+dist/
+
+# Quarto architecture overview exports and render cache
+/.quarto/
+/architecture-overview.pdf
+/architecture-overview_files/
+/output/
+**/*.quarto_ipynb

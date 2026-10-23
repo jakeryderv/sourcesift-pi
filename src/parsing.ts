@@ -69,7 +69,9 @@ export async function parseFeed(page: Page): Promise<{ items: ParsedItem[]; malf
 			continue;
 		}
 		const title = plainText(entry.title ?? "Untitled").slice(0, 512);
-		const text = plainText(entry.content ?? rawField(entry, "content:encoded") ?? rawField(entry, "summary") ?? entry.contentSnippet);
+		const text = plainText(
+			entry.content ?? rawField(entry, "content:encoded") ?? rawField(entry, "summary") ?? entry.contentSnippet,
+		);
 		const published = rawField(entry, "published");
 		const updated = rawField(entry, "updated");
 		const atom = published !== undefined || updated !== undefined;
@@ -106,7 +108,11 @@ export function discoverFeeds(page: Page): string[] {
 /** Extract main HTML text and explicit metadata, without crawling or date guesses. */
 export function parseArticle(page: Page, maxChars: number): ParsedItem {
 	const head = page.body.subarray(0, 512).toString("utf8").trimStart().toLowerCase();
-	if (!page.contentType.toLowerCase().includes("html") && !head.startsWith("<!doctype html") && !head.startsWith("<html")) {
+	if (
+		!page.contentType.toLowerCase().includes("html") &&
+		!head.startsWith("<!doctype html") &&
+		!head.startsWith("<html")
+	) {
 		throw new RetrievalError("Article is not an HTML document.");
 	}
 	const html = page.body.toString("utf8");

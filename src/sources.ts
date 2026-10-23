@@ -1,6 +1,6 @@
 /** Source records and an immutable per-session catalog; no plugin discovery. */
 
-import { normalizeUrl, RetrievalError } from "./urls.ts";
+import { normalizeUrl, type RetrievalError } from "./urls.ts";
 
 export type Capability = "feed" | "article";
 
@@ -48,11 +48,14 @@ export function validateSource(input: unknown): Source {
 			throw new Error(`source ${id}: ${(error as RetrievalError).message}`);
 		}
 	});
-	const capabilities = (raw.capabilities === undefined ? ["feed", "article"] : strings(raw.capabilities, "capabilities", 2)) as Capability[];
+	const capabilities = (
+		raw.capabilities === undefined ? ["feed", "article"] : strings(raw.capabilities, "capabilities", 2)
+	) as Capability[];
 	if (capabilities.some((item) => item !== "feed" && item !== "article")) {
 		throw new Error(`source ${id}: capabilities must be feed or article`);
 	}
-	if (feeds.length && !capabilities.includes("feed")) throw new Error(`source ${id}: feed URLs require the feed capability`);
+	if (feeds.length && !capabilities.includes("feed"))
+		throw new Error(`source ${id}: feed URLs require the feed capability`);
 	return {
 		id,
 		name,
@@ -115,7 +118,8 @@ export const BUILTIN_SOURCES: Source[] = [
 		website: "https://www.pbs.org/newshour/",
 		feeds: ["https://www.pbs.org/newshour/feeds/rss/headlines"],
 		aliases: ["PBS", "PBS News Hour"],
-		description: "US national public-interest news, politics, policy, and major world stories. Complements NPR for general news.",
+		description:
+			"US national public-interest news, politics, policy, and major world stories. Complements NPR for general news.",
 		topics: ["news", "politics", "business"],
 		geography: "US national focus; also international reporting",
 	}),
@@ -125,7 +129,8 @@ export const BUILTIN_SOURCES: Source[] = [
 		website: "https://arstechnica.com/",
 		feeds: ["https://feeds.arstechnica.com/arstechnica/index"],
 		aliases: ["Ars"],
-		description: "Technology, software, computing, science, security, and AI developments for technically interested readers.",
+		description:
+			"Technology, software, computing, science, security, and AI developments for technically interested readers.",
 		topics: ["technology", "ai", "science"],
 		geography: "US-based; international technology coverage",
 	}),
@@ -154,7 +159,8 @@ export const BUILTIN_SOURCES: Source[] = [
 		name: "Marketing Dive",
 		website: "https://www.marketingdive.com/",
 		feeds: ["https://www.marketingdive.com/feeds/news/"],
-		description: "Marketing and advertising industry news: brands, campaigns, agencies, advertising technology, and business strategy.",
+		description:
+			"Marketing and advertising industry news: brands, campaigns, agencies, advertising technology, and business strategy.",
 		topics: ["marketing", "business"],
 		geography: "US industry focus",
 	}),

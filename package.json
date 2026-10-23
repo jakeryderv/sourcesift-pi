@@ -27,7 +27,11 @@
   "scripts": {
     "chat": "node bin/ssift.js",
     "typecheck": "tsc --noEmit",
-    "smoke": "node scripts/smoke.ts"
+    "smoke": "node scripts/smoke.ts",
+    "lint": "biome ci .",
+    "format": "biome format --write .",
+    "lint:fix": "biome check --write .",
+    "test": "node --test"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
@@ -42,6 +46,7 @@
     "typebox": "*"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@earendil-works/pi-coding-agent": "1.4.0",
     "@types/node": "^24.19.2",
     "typescript": "^5.9.3"

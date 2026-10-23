@@ -192,7 +192,12 @@ export class Research {
 		return { window: this.window, evidence: [...this.evidence.values()], limitations: this.limitations };
 	}
 
-	async research(sourceIds: string[], directUrls: string[], onlySources: string[], window: WindowName = "recent"): Promise<Reply> {
+	async research(
+		sourceIds: string[],
+		directUrls: string[],
+		onlySources: string[],
+		window: WindowName = "recent",
+	): Promise<Reply> {
 		this.attempted = true;
 		if (this.window === null) {
 			this.window = makeWindow(window, this.config, this.now);
@@ -299,7 +304,8 @@ export class Research {
 		if (this.articles >= this.config.limits.maxArticles) throw new RetrievalError("Article limit reached.");
 		const known = this.allEvidence().get(url);
 		const source = known?.source_id ? this.registry.resolve(known.source_id) : undefined;
-		if (source && !source.capabilities.includes("article")) throw new RetrievalError("This source does not offer article access.");
+		if (source && !source.capabilities.includes("article"))
+			throw new RetrievalError("This source does not offer article access.");
 		this.articles += 1;
 		this.read.add(url);
 		const page = await this.fetcher.get(url);
@@ -327,10 +333,19 @@ export class Research {
 		this.fingerprints.delete(url);
 	}
 
-	private add(item: ParsedItem, page: Page, sourceId: string | null, kind: Reference["kind"], replacing: string | null = null): boolean {
+	private add(
+		item: ParsedItem,
+		page: Page,
+		sourceId: string | null,
+		kind: Reference["kind"],
+		replacing: string | null = null,
+	): boolean {
 		if (!this.window) throw new Error("window is not set");
 		const date = item.publishedAt ?? item.updatedAt;
-		if (date && (date.toISOString() > this.window.end || (this.window.start !== null && date.toISOString() < this.window.start))) {
+		if (
+			date &&
+			(date.toISOString() > this.window.end || (this.window.start !== null && date.toISOString() < this.window.start))
+		) {
 			this.note("Entries outside the requested date window were excluded; feeds do not provide archive search.");
 			if (replacing) this.drop(replacing);
 			return false;
@@ -360,7 +375,8 @@ export class Research {
 		const text = item.text.slice(0, Math.min(limits.maxItemChars, remaining));
 		const warnings: string[] = [];
 		if (!date) warnings.push("Publication/update date is unknown; freshness is unverified.");
-		else if (!item.publishedAt) warnings.push("Only an update date is available; original publication date is unknown.");
+		else if (!item.publishedAt)
+			warnings.push("Only an update date is available; original publication date is unknown.");
 		if (text.length < item.text.length) warnings.push("Evidence text was truncated to the configured limit.");
 		if (kind === "feed_summary") warnings.push("Only the feed summary was retrieved, not the full article.");
 		const reference: Evidence = {

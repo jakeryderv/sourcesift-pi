@@ -12,13 +12,13 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
-	initTheme,
 	InteractiveMode,
+	initTheme,
+	VERSION as PI_VERSION,
 	resolveCliModel,
 	runPrintMode,
 	SessionManager,
 	SettingsManager,
-	VERSION as PI_VERSION,
 } from "@earendil-works/pi-coding-agent";
 
 import { loadConfig } from "./config.ts";
@@ -56,7 +56,8 @@ Inside the chat: /sources, /evidence, /model, /new, /resume, /fork, /help.
 
 function packageVersion(): string {
 	try {
-		return (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
+		return (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string })
+			.version;
 	} catch {
 		return "unknown";
 	}
@@ -94,11 +95,13 @@ function parse(argv: string[]) {
 		fail((error as Error).message);
 	}
 	const { values, positionals } = parsed;
-	if (values.mode !== undefined && values.mode !== "text" && values.mode !== "json") fail("--mode must be text or json");
+	if (values.mode !== undefined && values.mode !== "text" && values.mode !== "json")
+		fail("--mode must be text or json");
 	if (values.thinking !== undefined && !THINKING_LEVELS.includes(values.thinking as ThinkingLevel)) {
 		fail(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
 	}
-	if (values["no-session"] && (values.continue || values.session)) fail("--no-session cannot be combined with --continue or --session");
+	if (values["no-session"] && (values.continue || values.session))
+		fail("--no-session cannot be combined with --continue or --session");
 	return { values, positionals };
 }
 
@@ -134,7 +137,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 	const extension = createSourceSiftExtension({ config, onResult: (result) => (lastResult = result) });
 	const thinking = values.thinking as ThinkingLevel | undefined;
 
-	const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+		cwd,
+		agentDir,
+		sessionManager,
+		sessionStartEvent,
+	}) => {
 		const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 		const services = await createAgentSessionServices({
 			cwd,
@@ -192,7 +200,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 		const models = await services.modelRuntime.getAvailable();
 		for (const model of models) {
 			const id = `${model.provider}/${model.id}`;
-			if (!pattern || id.toLowerCase().includes(pattern) || model.name.toLowerCase().includes(pattern)) process.stdout.write(`${id}\n`);
+			if (!pattern || id.toLowerCase().includes(pattern) || model.name.toLowerCase().includes(pattern))
+				process.stdout.write(`${id}\n`);
 		}
 		await runtime.dispose();
 		return;
@@ -206,7 +215,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 		: promptText || undefined;
 
 	for (const diagnostic of runtime.diagnostics) {
-		if (diagnostic.type === "error" || !interactive) process.stderr.write(`ssift: ${diagnostic.type}: ${diagnostic.message}\n`);
+		if (diagnostic.type === "error" || !interactive)
+			process.stderr.write(`ssift: ${diagnostic.type}: ${diagnostic.message}\n`);
 	}
 	if (runtime.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
 		await runtime.dispose();
@@ -227,7 +237,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 	}
 
 	if (!initialMessage) fail("provide a prompt, or pipe text to standard input");
-	if (!session.model) fail("no model is selected; pass --model, set a provider key, or run ssift interactively and use /login");
+	if (!session.model)
+		fail("no model is selected; pass --model, set a provider key, or run ssift interactively and use /login");
 	const outputMode = (values.mode ?? "text") as "text" | "json";
 	const exitCode = await runPrintMode(runtime, { mode: outputMode, initialMessage });
 	// pi prints only a final assistant message; SourceSift appends a references entry after it,

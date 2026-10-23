@@ -59,6 +59,7 @@ export function isGlobalAddress(address: string): boolean {
 
 /** Normalize public HTTP(S) URLs, dropping fragments and tracking parameters. */
 export function normalizeUrl(value: string): string {
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting control characters in URLs is the point
 	if (value.length > 4096 || /[\u0000- \u007f\\]/.test(value)) {
 		throw new RetrievalError(MESSAGE);
 	}

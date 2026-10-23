@@ -8,7 +8,9 @@ const fetcher = new Fetcher(loadConfig().limits);
 const started = Date.now();
 try {
 	const page = await fetcher.get(url);
-	console.log(`ok ${page.url} status=200 bytes=${page.body.length} type=${page.contentType} in ${Date.now() - started}ms, requests=${fetcher.requests}`);
+	console.log(
+		`ok ${page.url} status=200 bytes=${page.body.length} type=${page.contentType} in ${Date.now() - started}ms, requests=${fetcher.requests}`,
+	);
 } catch (error) {
 	const err = error as Error & { cause?: unknown };
 	console.log(`failed after ${Date.now() - started}ms, requests=${fetcher.requests}: ${err.message}`);
