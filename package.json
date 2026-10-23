@@ -1,6 +1,6 @@
 {
   "name": "sourcesift-pi",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "ssift: a research agent over registered sources with cited evidence, built on pi.",
   "type": "module",
