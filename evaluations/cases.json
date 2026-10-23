@@ -1,0 +1,34 @@
+[
+  {
+    "id": "news",
+    "prompt": "Check news. Give me two current US national stories with citations.",
+    "expected_any": ["npr", "pbs"]
+  },
+  {
+    "id": "tech-ai",
+    "prompt": "What is new in technology and artificial intelligence? Give me two developments and explain why they matter.",
+    "expected_any": ["ars-technica", "techcrunch", "mit-technology-review"]
+  },
+  {
+    "id": "business-finance",
+    "prompt": "Check business and finance this week. Give me two developments, not investment advice.",
+    "expected_any": ["cnbc", "federal-reserve", "techcrunch"]
+  },
+  {
+    "id": "named-only",
+    "prompt": "Check only Ars Technica for recent AI or computing developments. Give me at most two items.",
+    "expected_only": ["ars-technica"]
+  },
+  {
+    "id": "unknown-only",
+    "prompt": "Check only the Unregistered Gazette for current news. Do not use other publications.",
+    "expected_only": [],
+    "expect_no_evidence": true
+  },
+  {
+    "id": "direct-url",
+    "prompt": "Summarize this page in three sentences: https://www.federalreserve.gov/newsevents/pressreleases.htm",
+    "expected_only": [],
+    "expect_direct_url": true
+  }
+]

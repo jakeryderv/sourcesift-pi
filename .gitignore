@@ -9,3 +9,6 @@ dist/
 /architecture-overview_files/
 /output/
 **/*.quarto_ipynb
+
+# Live evaluation records (answers and references for review)
+evaluation-results/

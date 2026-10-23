@@ -31,7 +31,8 @@
     "lint": "biome ci .",
     "format": "biome format --write .",
     "lint:fix": "biome check --write .",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "eval": "node scripts/eval.ts"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",

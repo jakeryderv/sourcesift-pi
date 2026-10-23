@@ -102,10 +102,31 @@ order, so citation IDs are stable.
 ## Develop
 
 ```sh
+npm test                   # unit tests for URLs, parsing, config, sources, research, rendering
 npm run typecheck          # tsc --noEmit
+npm run lint               # biome
 npm run smoke -- npr       # retrieval only, no model: one feed and one article
 node scripts/debug-fetch.ts https://example.com/   # show the underlying fetch failure
 ```
+
+## Evaluate
+
+`evaluations/cases.json` holds six fixed prompts: general news, tech and AI, business and
+finance, a named-only request, an unknown publication, and a direct URL. The harness runs
+each through `ssift --mode json`, checks source selection, evidence presence, named-only
+enforcement, and citation validity automatically, and writes the answer, references, and
+raw events for review:
+
+```sh
+npm run eval -- --provider openrouter --model openai/gpt-6.1-sol --thinking low
+npm run eval -- --case named-only
+```
+
+Records land in the ignored `evaluation-results/` directory. `evaluations/baseline.json`
+is the committed summary of the last accepted run: which sources were selected, how many
+references were cited, timing, model calls, and cost, without answer text. The automatic
+checks are smoke checks; whether each cited claim is actually supported still needs a
+human read of the records. This costs real model usage and contacts public feeds.
 
 Node runs the TypeScript source directly; there is no build step. The extension in
 `src/extension.ts` also loads into a plain `pi` session with `pi -e <this directory>`.
